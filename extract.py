@@ -3,7 +3,10 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 import spacy
+from synthesis import get_model
 from spacy import displacy
+
+clf, embed = get_model()
 
 #print('downloading...')
 #nltk.download()
@@ -11,7 +14,6 @@ from spacy import displacy
 
 nlp = spacy.load('en_core_web_sm')
 stop_words = set(stopwords.words('english'))
-
 
 '''
 ('sqlite_sequence',)
@@ -44,8 +46,16 @@ def get_table_names():
 
     conn.close()
 
+def get_phrase(token):
+    ans = ''
+    for child in token.lefts:
+        ans = ans + get_phrase(child) + ' '
+    ans = ans + token.text + ' '
+    for child in token.rights:
+        ans = ans + get_phrase(child) + ' '
+    return ans[:-1]
 
-def get_reviews(cursor):
+def get_reviews(cursor, verb=False):
     q = 'select * from OneStarReviews'
     cursor.execute(q)
 
@@ -53,7 +63,7 @@ def get_reviews(cursor):
         x = cursor.fetchone()
         Y = sent_tokenize(x[4])
         # print(Y)
-        
+
         last = ''
         for y in range(len(Y)):
             i = Y[y]
@@ -61,42 +71,43 @@ def get_reviews(cursor):
             if not contains_key_phrase(i):
                 last = i
                 continue
-            
+
             X = [last, i, '']
             if y < len(Y) - 1:
-                X[2] = Y[y+1]
+                X[2] = Y[y + 1]
 
-            print(X)
-            
+            #print(X)
+            Us, As = [],[]
             for x in X:
                 wordsList = nltk.word_tokenize(x)
                 wordsList = [w for w in wordsList if not w in stop_words]
-                tagged = nltk.pos_tag(wordsList)
-                # print(tagged)
 
                 parsed = nlp(x)
-                # print('parsed')
-                # print(parsed)
 
                 for token in parsed:
                     if str(token.dep_) in ['ROOT', 'advcl']:
-                        print ("{:<15} | {:<8} | {:<15} | {:<20}".format(str(token.text), str(token.dep_), str(token.head.text), str([child for child in token.children])))
-                
-            last = i 
+                        C = get_phrase(token)
+                        x = embed([C])
+                        y = clf.predict(x)
+                        if y[0] != '0':
+                            if y[0] == '1':
+                                Us.append(C)
+                            else:
+                                As.append(C)
+                            if verb == True:
+                                print("{:<15} | {:<8} | {:<15} | {:<20}".format(str(token.text), str(token.dep_),
+                                                                            str(token.head.text),
+                                                                            str([child for child in token.children])))
+                                print(C)
+                                print(y)
+                                input()
+            if len(Us) > 0 and len(As) > 0:
+                print(Us)
+                print(As)
+                input()
+            last = i
 
-        input()
+        #input()
 
 
-conn = connect('data.db')
-try:
-    cursor = conn.cursor()
-    get_reviews(cursor)
-    conn.close()
-except Exception as e:
-    print('Something went wrong...\n\n{}'.format(e))
-    conn.close()
-
-
-
-print('hello world')
 
